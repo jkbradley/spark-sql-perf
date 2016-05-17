@@ -482,6 +482,63 @@ abstract class Benchmark(
     }
   }
 
+  /**
+   * A class for benchmarking MLlib Spark perf results.
+   *
+   * @param name  Test name
+   * @param parameters  Parameters for test.  These are recorded here but set beforehand
+   *                    (contained within the prepare, train, and test methods).
+   * @param prepare  Prepare data.  Not timed.
+   * @param train  Train the model.  Timed.
+   * @param evaluateTrain  Compute training metric
+   * @param evaluateTest  Compute test metric
+   */
+  class MLlibSparkPerfExecution(
+      override val name: String,
+      parameters: Map[String, String],
+      prepare: () => Unit,
+      train: () => Unit,
+      evaluateTrain: () => Option[Double],
+      evaluateTest: () => Option[Double])
+    extends Benchmarkable {
+
+    protected override val executionMode: ExecutionMode = ExecutionMode.SparkPerfResults
+
+    protected override def beforeBenchmark(): Unit = { prepare() }
+
+    protected override def doBenchmark(
+      includeBreakdown: Boolean,
+      description: String = "",
+      messages: ArrayBuffer[String]): BenchmarkResult = {
+      try {
+        val trainingTimeMs = measureTimeMs(train())
+        val trainingMetric = evaluateTrain()
+        val (testMetric, testTimeMs) = {
+          val startTime = System.nanoTime()
+          val metric = evaluateTest()
+          val endTime = System.nanoTime()
+          (metric, (endTime - startTime).toDouble / 1000000)
+        }
+        BenchmarkResult(
+          name = name,
+          mode = executionMode.toString,
+          parameters = parameters,
+          executionTime = Some(trainingTimeMs),
+          trainingTime = Some(trainingTimeMs),
+          trainingMetric = trainingMetric,
+          testTime = Some(testTimeMs),
+          testMetric = testMetric)
+      } catch {
+        case e: Exception =>
+          BenchmarkResult(
+            name = name,
+            mode = executionMode.toString,
+            parameters = parameters,
+            failure = Some(Failure(e.getClass.getSimpleName, e.getMessage)))
+      }
+    }
+  }
+
   /** A class for benchmarking Spark perf results. */
   class SparkPerfExecution(
       override val name: String,
